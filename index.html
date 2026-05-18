@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Spray Wall</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d0b08">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Spray Wall">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="favicon.png" type="image/png">
+<style>
+  :root{
+    --bg:#0d0b08; --panel:#161208; --panel-edge:#2a2114;
+    --chalk:#f4ede0; --muted:#9c8f78;
+    --amber:#e8a13a; --amber-dim:#7a5a22;
+    --start:#2bff88; --finish:#ff5a2b; --mid:#3bd6ff;
+    --danger:#d8633f; --line:#2e2615;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(120% 80% at 50% -10%, #1c1609 0%, var(--bg) 60%),var(--bg);
+    color:var(--chalk);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    overflow:hidden;height:100dvh;display:flex;flex-direction:column;
+  }
+  header{
+    display:flex;align-items:center;gap:.7rem;
+    padding:.6rem 1rem;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#181307,#100d06);flex:0 0 auto;
+  }
+  header h1{font-size:1rem;font-weight:600;letter-spacing:.02em}
+  header .spacer{flex:1}
+  .modeToggle{display:flex;border:1px solid var(--panel-edge);border-radius:10px;overflow:hidden}
+  .modeToggle button{
+    background:var(--panel);color:var(--muted);border:none;
+    padding:.4rem .85rem;font-family:inherit;font-size:.8rem;cursor:pointer;
+  }
+  .modeToggle button.on{background:var(--amber);color:#1a1204;font-weight:600}
+
+  .stage{flex:1 1 auto;position:relative;overflow:hidden;touch-action:none;background:#070503}
+  .canvas-wrap{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+  #wall{display:block;user-select:none;-webkit-user-drag:none}
+  .holds-layer{position:absolute;inset:0;pointer-events:none}
+  .hold{
+    position:absolute;transform:translate(-50%,-50%);border-radius:50%;
+    border:3px solid transparent;pointer-events:auto;cursor:pointer;
+    transition:opacity .18s, border-color .18s, background .18s;
+  }
+  /* viewer: dim non-climb holds */
+  .hold.ghost{opacity:0;}
+  .hold.show{opacity:1}
+  .hold.r-start{border-color:var(--start);background:rgba(43,255,136,.42);
+    box-shadow:0 0 0 1.5px rgba(0,0,0,.9), inset 0 0 0 2px rgba(255,255,255,.55),
+      0 0 14px 2px rgba(43,255,136,.95)}
+  .hold.r-finish{border-color:var(--finish);background:rgba(255,90,43,.42);
+    box-shadow:0 0 0 1.5px rgba(0,0,0,.9), inset 0 0 0 2px rgba(255,255,255,.55),
+      0 0 14px 2px rgba(255,90,43,.95)}
+  .hold.r-mid{border-color:var(--mid);background:rgba(59,214,255,.40);
+    box-shadow:0 0 0 1.5px rgba(0,0,0,.9), inset 0 0 0 2px rgba(255,255,255,.5),
+      0 0 13px 2px rgba(59,214,255,.9)}
+  /* set mode: faint dot for every untagged hold */
+  .hold.pick{opacity:.34;border-color:#8a7c5e;background:rgba(160,150,120,.10)}
+  .hold.pick.r-start,.hold.pick.r-finish,.hold.pick.r-mid{opacity:1}
+
+  .panel{
+    flex:0 0 auto;border-top:1px solid var(--line);
+    background:linear-gradient(0deg,#181307,#100d06);
+    padding:.6rem .7rem calc(.6rem + env(safe-area-inset-bottom));
+  }
+  .row{display:flex;gap:.45rem;align-items:center;overflow-x:auto;padding-bottom:.15rem}
+  .row+.row{margin-top:.5rem}
+  button,select{
+    font-family:inherit;font-size:.82rem;background:var(--panel);color:var(--chalk);
+    border:1px solid var(--panel-edge);border-radius:10px;
+    padding:.55rem .8rem;cursor:pointer;white-space:nowrap;
+    transition:border-color .15s,background .15s,transform .05s;
+  }
+  button:active{transform:translateY(1px)}
+  button:hover{border-color:var(--amber-dim)}
+  button.primary{background:linear-gradient(180deg,#e8a13a,#c9852a);
+    color:#1a1204;border-color:#f0b357;font-weight:600}
+  button.danger{color:var(--danger);border-color:#5a2c1c}
+  button.on{background:var(--amber);color:#1a1204;font-weight:600}
+  select{appearance:none;padding-right:1.8rem;
+    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
+      linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-position:calc(100% - 14px) 55%,calc(100% - 9px) 55%;
+    background-size:5px 5px;background-repeat:no-repeat}
+  label.fld{display:flex;flex-direction:column;gap:.2rem;font-size:.62rem;
+    color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .climbList{display:flex;gap:.4rem;overflow-x:auto;padding-bottom:.2rem}
+  .climbCard{
+    flex:0 0 auto;min-width:128px;text-align:left;
+    background:var(--panel);border:1px solid var(--panel-edge);
+    border-radius:10px;padding:.5rem .65rem;cursor:pointer;
+  }
+  .climbCard.on{border-color:var(--amber);background:rgba(232,161,58,.12)}
+  .climbCard .nm{font-size:.85rem;font-weight:600}
+  .climbCard .gr{font-family:"SF Mono",ui-monospace,monospace;
+    font-size:.72rem;color:var(--amber);margin-top:.15rem}
+  .climbCard .by{font-size:.62rem;color:var(--muted);margin-top:.1rem}
+  .empty{color:var(--muted);font-size:.8rem;padding:.4rem .2rem}
+  .legend{display:flex;gap:.9rem;font-size:.66rem;color:var(--muted);align-items:center}
+  .legend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:.3rem;vertical-align:middle}
+  .legend .s{background:var(--start)} .legend .m{background:var(--mid)} .legend .f{background:var(--finish)}
+  .setHint{font-size:.7rem;color:var(--muted);margin-right:auto;align-self:center}
+  .hint{position:absolute;left:50%;top:.7rem;transform:translateX(-50%);
+    background:rgba(13,11,8,.86);border:1px solid var(--line);color:var(--muted);
+    font-size:.72rem;padding:.4rem .8rem;border-radius:999px;
+    backdrop-filter:blur(6px);pointer-events:none;z-index:20;transition:opacity .4s}
+  .toast{position:absolute;left:50%;bottom:6.6rem;transform:translateX(-50%);
+    background:var(--amber);color:#1a1204;font-weight:600;font-size:.8rem;
+    padding:.5rem 1rem;border-radius:999px;opacity:0;pointer-events:none;
+    transition:opacity .25s,transform .25s;z-index:30}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+  .hidden{display:none!important}
+  input[type=text]{font-family:inherit;font-size:.82rem;background:#0c0a06;
+    color:var(--chalk);border:1px solid var(--panel-edge);border-radius:10px;
+    padding:.55rem .7rem;min-width:140px}
+  @media(max-width:560px){header h1{font-size:.9rem}}
+</style>
+</head>
+<body>
+<header>
+  <h1>STEM Spray Wall</h1>
+  <span class="spacer"></span>
+  <div class="modeToggle" id="modeToggle">
+    <button data-m="climb" class="on">Climb</button>
+    <button data-m="set">Set</button>
+  </div>
+</header>
+
+<div class="stage" id="stage">
+  <div class="hint" id="hint">Pick a grade, then choose a climb</div>
+  <div class="canvas-wrap" id="cw">
+    <img id="wall" src="wall.jpg" alt="Spray wall" draggable="false">
+    <div class="holds-layer" id="layer"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<!-- CLIMB MODE -->
+<div class="panel" id="climbPanel">
+  <div class="row">
+    <label class="fld">Grade
+      <select id="gradeFilter"><option value="all">All grades</option></select>
+    </label>
+    <label class="fld">Sort
+      <select id="sortBy">
+        <option value="grade">By grade</option>
+        <option value="name">By name</option>
+        <option value="new">Newest</option>
+      </select>
+    </label>
+    <button id="randomBtn">🎲 Random</button>
+    <button id="clearSel">Clear</button>
+    <div class="legend" style="margin-left:auto">
+      <span><i class="s"></i>Start</span><span><i class="m"></i>Hold</span><span><i class="f"></i>Finish</span>
+    </div>
+  </div>
+  <div class="row">
+    <div class="climbList" id="climbList"></div>
+  </div>
+</div>
+
+<!-- SET MODE -->
+<div class="panel hidden" id="setPanel">
+  <div class="row">
+    <span class="setHint" id="setStatus">Tap holds to add them · tap again to cycle role</span>
+    <button id="importBtn">Import holds/JSON</button>
+    <button id="exportBtn" class="primary">Export JSON</button>
+    <input type="file" id="file" accept="application/json" hidden>
+  </div>
+  <div class="row">
+    <button id="roleStart" class="on">● Start</button>
+    <button id="roleMid">● Hold</button>
+    <button id="roleFinish">● Finish</button>
+    <input type="text" id="climbName" placeholder="Climb name">
+    <label class="fld">Grade
+      <select id="setGrade"></select>
+    </label>
+    <input type="text" id="setter" placeholder="Setter" style="min-width:110px">
+    <button id="saveClimb" class="primary">Save climb</button>
+    <button id="resetDraft" class="danger">Reset</button>
+  </div>
+  <div class="row" style="border-top:1px dashed var(--line);padding-top:.55rem;margin-top:.1rem">
+    <span class="setHint">⚙︎ Auto-set draft:</span>
+    <label class="fld">Target grade
+      <select id="genGrade"></select>
+    </label>
+    <button id="genBtn">✨ Generate draft</button>
+    <span class="setHint" id="genNote" style="margin-left:0"></span>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const GRADES=["V0","V1","V2","V3","V4","V5","V6","V7","V8","V9","V10","V11","V12+"];
+  const ROLES=["start","mid","finish"];
+
+  const stage=document.getElementById('stage'),cw=document.getElementById('cw'),
+    img=document.getElementById('wall'),layer=document.getElementById('layer'),
+    hint=document.getElementById('hint'),toast=document.getElementById('toast');
+
+  let holds=[];        // {id,x,y}
+  let climbs=[];       // {id,name,grade,setter,date,holds:[{id,role}]}
+  let natW=0,natH=0;
+  let view={scale:1,tx:0,ty:0};
+  let mode='climb';
+  let selectedClimb=null;
+  let draft={};        // holdId -> role  (set mode)
+  let draftRole='start';
+
+  /* ---- seed demo data so the viewer is testable before real tagging ---- */
+  function seed(){
+    // placeholder hold grid (replaced when you Import spraywall-holds.json)
+    let id=1;
+    for(let r=0;r<11;r++)for(let c=0;c<8;c++){
+      holds.push({id:id++, x:0.08+c*0.118, y:0.06+r*0.085});
+    }
+    const pick=(arr)=>arr.map(i=>holds[i].id);
+    climbs=[
+      {id:'c1',name:'Warm-Up Traverse',grade:'V1',setter:'Zach',date:'2026-05-10',
+       holds:[{id:holds[80].id,role:'start'},{id:holds[81].id,role:'start'},
+              {id:holds[66].id,role:'mid'},{id:holds[52].id,role:'mid'},
+              {id:holds[45].id,role:'mid'},{id:holds[30].id,role:'mid'},
+              {id:holds[12].id,role:'finish'}]},
+      {id:'c2',name:'Crimp School',grade:'V4',setter:'Zach',date:'2026-05-12',
+       holds:[{id:holds[83].id,role:'start'},
+              {id:holds[67].id,role:'mid'},{id:holds[51].id,role:'mid'},
+              {id:holds[42].id,role:'mid'},{id:holds[26].id,role:'mid'},
+              {id:holds[9].id,role:'finish'}]},
+      {id:'c3',name:'Sloper Sender',grade:'V5',setter:'Zach',date:'2026-05-15',
+       holds:[{id:holds[78].id,role:'start'},{id:holds[79].id,role:'start'},
+              {id:holds[60].id,role:'mid'},{id:holds[44].id,role:'mid'},
+              {id:holds[28].id,role:'mid'},{id:holds[11].id,role:'mid'},
+              {id:holds[3].id,role:'finish'}]},
+      {id:'c4',name:'Big Moves',grade:'V7',setter:'Zach',date:'2026-05-16',
+       holds:[{id:holds[82].id,role:'start'},
+              {id:holds[58].id,role:'mid'},{id:holds[40].id,role:'mid'},
+              {id:holds[20].id,role:'mid'},{id:holds[5].id,role:'finish'}]}
+    ];
+  }
+
+  /* ---------------- view transform ---------------- */
+  function applyView(){cw.style.transform=`translate(${view.tx}px,${view.ty}px) scale(${view.scale})`;}
+  function fit(){
+    const sr=stage.getBoundingClientRect();
+    const s=Math.min(sr.width/natW,sr.height/natH);
+    view.scale=s;view.tx=(sr.width-natW*s)/2;view.ty=(sr.height-natH*s)/2;applyView();
+  }
+  function clampZoom(s){return Math.max(0.2,Math.min(8,s));}
+  function zoomAt(cx,cy,f){
+    const ns=clampZoom(view.scale*f),k=ns/view.scale;
+    view.tx=cx-(cx-view.tx)*k;view.ty=cy-(cy-view.ty)*k;view.scale=ns;applyView();
+  }
+  function holdSize(){return Math.max(15,28/view.scale);}
+
+  /* ---------------- rendering ---------------- */
+  function render(){
+    layer.innerHTML='';
+    const sz=holdSize();
+    const roleOf={};
+    if(mode==='climb'&&selectedClimb){selectedClimb.holds.forEach(h=>roleOf[h.id]=h.role);}
+    holds.forEach(h=>{
+      const d=document.createElement('div');
+      d.className='hold';
+      d.style.left=(h.x*natW)+'px';d.style.top=(h.y*natH)+'px';
+      d.style.width=sz+'px';d.style.height=sz+'px';
+      if(mode==='climb'){
+        const r=roleOf[h.id];
+        if(r){d.classList.add('show','r-'+r);}
+        else{d.classList.add('ghost');}
+      }else{
+        d.classList.add('pick');
+        const r=draft[h.id];
+        if(r)d.classList.add('r-'+r);
+        d.addEventListener('click',ev=>{ev.stopPropagation();cycleHold(h.id);});
+      }
+      layer.appendChild(d);
+    });
+  }
+
+  /* ---------------- climb mode ---------------- */
+  const gradeFilter=document.getElementById('gradeFilter'),
+    sortBy=document.getElementById('sortBy'),
+    climbList=document.getElementById('climbList');
+  function buildGradeOptions(){
+    GRADES.forEach(g=>{
+      gradeFilter.insertAdjacentHTML('beforeend',`<option value="${g}">${g}</option>`);
+      document.getElementById('setGrade').insertAdjacentHTML('beforeend',`<option value="${g}">${g}</option>`);
+      document.getElementById('genGrade').insertAdjacentHTML('beforeend',`<option value="${g}">${g}</option>`);
+    });
+    document.getElementById('setGrade').value='V3';
+    document.getElementById('genGrade').value='V3';
+  }
+  function gIdx(g){return GRADES.indexOf(g);}
+  function refreshList(){
+    const f=gradeFilter.value, s=sortBy.value;
+    let list=climbs.filter(c=>f==='all'||c.grade===f);
+    list.sort((a,b)=> s==='name'?a.name.localeCompare(b.name)
+      : s==='new'?(b.date||'').localeCompare(a.date||'')
+      : gIdx(a.grade)-gIdx(b.grade)|| a.name.localeCompare(b.name));
+    climbList.innerHTML='';
+    if(!list.length){climbList.innerHTML='<div class="empty">No climbs at this grade yet — switch to Set mode to create one.</div>';return;}
+    list.forEach(c=>{
+      const el=document.createElement('button');
+      el.className='climbCard'+(selectedClimb&&selectedClimb.id===c.id?' on':'');
+      el.innerHTML=`<div class="nm">${esc(c.name)}</div><div class="gr">${c.grade}</div><div class="by">${esc(c.setter||'—')}</div>`;
+      el.addEventListener('click',()=>{selectClimb(c);});
+      climbList.appendChild(el);
+    });
+  }
+  function selectClimb(c){
+    selectedClimb=(selectedClimb&&selectedClimb.id===c.id)?null:c;
+    hint.style.opacity='0';refreshList();render();
+  }
+  function esc(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+
+  gradeFilter.addEventListener('change',()=>{selectedClimb=null;refreshList();render();});
+  sortBy.addEventListener('change',refreshList);
+  document.getElementById('clearSel').addEventListener('click',()=>{selectedClimb=null;refreshList();render();});
+  document.getElementById('randomBtn').addEventListener('click',()=>{
+    const f=gradeFilter.value;
+    const pool=climbs.filter(c=>f==='all'||c.grade===f);
+    if(!pool.length){showToast('No climbs to pick from');return;}
+    selectClimb(pool[Math.floor(Math.random()*pool.length)]);
+    showToast('🎲 '+selectedClimb.name);
+  });
+
+  /* ---------------- set mode ---------------- */
+  ['roleStart','roleMid','roleFinish'].forEach((bid,i)=>{
+    document.getElementById(bid).addEventListener('click',e=>{
+      draftRole=ROLES[i];
+      ['roleStart','roleMid','roleFinish'].forEach(x=>document.getElementById(x).classList.remove('on'));
+      e.currentTarget.classList.add('on');
+    });
+  });
+  function cycleHold(id){
+    if(!draft[id]){draft[id]=draftRole;}
+    else{
+      const i=ROLES.indexOf(draft[id]);
+      if(i===ROLES.length-1)delete draft[id];
+      else draft[id]=ROLES[i+1];
+    }
+    updateSetStatus();render();
+  }
+  function updateSetStatus(){
+    const n=Object.keys(draft).length;
+    const s=Object.values(draft).filter(r=>r==='start').length;
+    const f=Object.values(draft).filter(r=>r==='finish').length;
+    document.getElementById('setStatus').textContent=
+      n? `${n} holds · ${s} start · ${f} finish — tap a hold to cycle start→hold→finish→off`
+       : 'Tap holds to add them · tap again to cycle role';
+  }
+  document.getElementById('saveClimb').addEventListener('click',()=>{
+    const name=document.getElementById('climbName').value.trim();
+    const ids=Object.keys(draft);
+    if(!name){showToast('Name the climb first');return;}
+    if(ids.length<2){showToast('Add at least 2 holds');return;}
+    const hasStart=Object.values(draft).includes('start');
+    const hasFinish=Object.values(draft).includes('finish');
+    if(!hasStart||!hasFinish){showToast('Need a start and a finish');return;}
+    climbs.push({
+      id:'c'+Date.now(),
+      name, grade:document.getElementById('setGrade').value,
+      setter:document.getElementById('setter').value.trim()||'—',
+      date:new Date().toISOString().slice(0,10),
+      holds:ids.map(i=>({id:isNaN(+i)?i:+i,role:draft[i]}))
+    });
+    showToast('Saved “'+name+'”');
+    resetDraft();refreshList();
+  });
+  function resetDraft(){
+    draft={};document.getElementById('climbName').value='';
+    document.getElementById('setter').value='';
+    updateSetStatus();render();
+  }
+  document.getElementById('resetDraft').addEventListener('click',resetDraft);
+
+  /* ---------------- auto-generator ----------------
+     Geometry-only: builds a climbable chain (start low → finish high)
+     with realistic reach + alternating-ish hand flow. Grade sets the
+     move count + reach defaults; it is a STARTING GUESS, not a verdict —
+     you climb it and re-grade by feel. Drops into the draft so you edit. */
+  const MOVES_BY_GRADE={V0:5,V1:5,V2:6,V3:6,V4:7,V5:7,V6:8,V7:8,V8:9,V9:9,V10:10,V11:11,"V12+":12};
+  // reach span grows with grade: easier = closer holds, harder = bigger moves
+  const REACH_BY_GRADE={V0:0.15,V1:0.16,V2:0.17,V3:0.19,V4:0.21,V5:0.22,V6:0.24,V7:0.26,V8:0.27,V9:0.29,V10:0.30,V11:0.32,"V12+":0.34};
+  function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+  function generate(){
+    if(holds.length<6){showToast('Import real holds first');return;}
+    const grade=document.getElementById('genGrade').value;
+    const reachMax=REACH_BY_GRADE[grade]||0.22;
+    const target=MOVES_BY_GRADE[grade]||7;
+
+    // start: a hold low on the wall (high y), finish: a hold high (low y)
+    const byY=[...holds].sort((a,b)=>b.y-a.y);
+    const lowBand=byY.slice(0,Math.max(3,Math.round(holds.length*0.30)));
+    const highBand=byY.slice(-Math.max(3,Math.round(holds.length*0.20)));
+    const start=lowBand[Math.floor(Math.random()*lowBand.length)];
+    let finish=highBand[Math.floor(Math.random()*highBand.length)];
+    if(finish.id===start.id)finish=highBand[(highBand.indexOf(finish)+1)%highBand.length];
+
+    // greedy chain: from current hold, step toward finish, preferring
+    // holds within reach, gaining height, and zig-zagging horizontally.
+    const used=new Set([start.id]);
+    const seq=[start];
+    let cur=start, lastDx=0, guard=0;
+    while(seq.length<target-1 && guard++<400){
+      const cands=holds.filter(h=>{
+        if(used.has(h.id))return false;
+        const d=dist(cur,h);
+        if(d<0.035||d>reachMax)return false;
+        return h.y < cur.y+0.04;            // mostly upward, slight down ok
+      });
+      if(!cands.length)break;
+      cands.forEach(h=>{
+        const up=(cur.y-h.y);                       // reward height gain
+        const toFin=1-dist(h,finish);               // reward progress to finish
+        const dx=h.x-cur.x;
+        const zig=(lastDx===0)?0:(Math.sign(dx)!==Math.sign(lastDx)?0.10:-0.04);
+        const spacing=1-Math.abs(dist(cur,h)-reachMax*0.7); // prefer ~consistent span
+        h._score=up*1.6 + toFin*1.1 + zig + spacing*0.5 + Math.random()*0.15;
+      });
+      cands.sort((a,b)=>b._score-a._score);
+      const next=cands[0];
+      lastDx=next.x-cur.x;
+      used.add(next.id);seq.push(next);cur=next;
+    }
+    if(!used.has(finish.id))seq.push(finish);
+
+    // commit to the draft using existing role pipeline
+    draft={};
+    seq.forEach((h,i)=>{
+      draft[h.id]= i===0?'start' : i===seq.length-1?'finish' : 'mid';
+    });
+    document.getElementById('setGrade').value=grade;
+    document.getElementById('climbName').value='Generated '+grade+' #'+Math.floor(Math.random()*900+100);
+    document.getElementById('setter').value='App';
+    document.getElementById('genNote').textContent=
+      `${seq.length} holds · grade is a guess — climb & re-grade`;
+    updateSetStatus();render();
+    showToast('Draft generated — edit, then Save');
+  }
+  document.getElementById('genBtn').addEventListener('click',generate);
+
+  /* ---------------- import / export ---------------- */
+  const fileInput=document.getElementById('file');
+  document.getElementById('importBtn').addEventListener('click',()=>fileInput.click());
+  fileInput.addEventListener('change',e=>{
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{
+      try{
+        const d=JSON.parse(r.result);
+        if(d.holds&&d.holds.length){holds=d.holds.map(h=>({id:h.id,x:h.x,y:h.y}));}
+        if(d.climbs&&d.climbs.length){climbs=d.climbs;}
+        selectedClimb=null;refreshList();render();
+        showToast(`Imported ${holds.length} holds, ${climbs.length} climbs`);
+      }catch(err){alert('Could not parse JSON: '+err.message);}
+    };
+    r.readAsText(f);
+  });
+  document.getElementById('exportBtn').addEventListener('click',()=>{
+    const payload={
+      wall:{name:"STEM Spray Wall",heightFt:12,widthFt:8,angleDeg:30,
+            gradeScale:"V",image:"wall.jpg",imageW:natW,imageH:natH},
+      holds:holds.map(h=>({id:h.id,x:+h.x.toFixed(5),y:+h.y.toFixed(5)})),
+      climbs,
+      exported:new Date().toISOString()
+    };
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='spraywall.json';a.click();
+    showToast(`Exported ${climbs.length} climbs`);
+  });
+
+  /* ---------------- mode toggle ---------------- */
+  document.getElementById('modeToggle').addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b)return;
+    mode=b.dataset.m;
+    [...e.currentTarget.children].forEach(c=>c.classList.toggle('on',c===b));
+    document.getElementById('climbPanel').classList.toggle('hidden',mode!=='climb');
+    document.getElementById('setPanel').classList.toggle('hidden',mode!=='set');
+    if(mode==='set'){selectedClimb=null;updateSetStatus();}
+    else{refreshList();}
+    hint.style.opacity= mode==='climb'?'1':'0';
+    render();
+  });
+
+  /* ---------------- pan / zoom / tap ---------------- */
+  let pointers=new Map(),dragMoved=false,startPan=null,pinchStart=null;
+  stage.addEventListener('pointerdown',e=>{
+    if(e.target.classList.contains('hold')&&mode==='set')return;
+    stage.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});dragMoved=false;
+    if(pointers.size===1)startPan={x:e.clientX,y:e.clientY,tx:view.tx,ty:view.ty};
+    else if(pointers.size===2){
+      const p=[...pointers.values()];
+      pinchStart={dist:Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y),scale:view.scale,
+        cx:(p[0].x+p[1].x)/2,cy:(p[0].y+p[1].y)/2,tx:view.tx,ty:view.ty};
+    }
+  });
+  stage.addEventListener('pointermove',e=>{
+    if(!pointers.has(e.pointerId))return;
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.size===2&&pinchStart){
+      const p=[...pointers.values()],d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+      view.scale=clampZoom(pinchStart.scale*(d/pinchStart.dist));
+      const k=view.scale/pinchStart.scale,sr=stage.getBoundingClientRect();
+      const cx=pinchStart.cx-sr.left,cy=pinchStart.cy-sr.top;
+      view.tx=cx-(cx-pinchStart.tx)*k;view.ty=cy-(cy-pinchStart.ty)*k;
+      applyView();dragMoved=true;
+    }else if(pointers.size===1&&startPan){
+      const dx=e.clientX-startPan.x,dy=e.clientY-startPan.y;
+      if(Math.abs(dx)+Math.abs(dy)>4)dragMoved=true;
+      view.tx=startPan.tx+dx;view.ty=startPan.ty+dy;applyView();
+    }
+  });
+  function endPtr(e){pointers.delete(e.pointerId);
+    if(pointers.size<2)pinchStart=null;if(pointers.size===0)startPan=null;}
+  stage.addEventListener('pointerup',e=>{endPtr(e);});
+  stage.addEventListener('pointercancel',endPtr);
+  stage.addEventListener('wheel',e=>{
+    e.preventDefault();const sr=stage.getBoundingClientRect();
+    zoomAt(e.clientX-sr.left,e.clientY-sr.top,e.deltaY<0?1.12:0.89);
+  },{passive:false});
+
+  /* ---------------- boot ---------------- */
+  function boot(){
+    natW=img.naturalWidth;natH=img.naturalHeight;
+    seed();buildGradeOptions();fit();refreshList();render();
+    setTimeout(()=>{if(mode==='climb')hint.style.opacity='0';},5000);
+  }
+  if(img.complete&&img.naturalWidth)boot();
+  else img.addEventListener('load',boot);
+  window.addEventListener('resize',render);
+
+  function showToast(t){toast.textContent=t;toast.classList.add('show');
+    clearTimeout(toast._t);toast._t=setTimeout(()=>toast.classList.remove('show'),1300);}
+})();
+</script>
+
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW reg failed',e));
+  });
+}
+</script>
+</body>
+</html>
