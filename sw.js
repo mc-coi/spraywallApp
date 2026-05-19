@@ -3,7 +3,7 @@
    Bump CACHE_VERSION whenever you change index.html or wall.jpg so
    phones pick up the new version instead of a stale cache. */
 
-const CACHE_VERSION = 'spraywall-v2';
+const CACHE_VERSION = 'spraywall-v3';
 
 /* Relative paths (no leading slash) so this works whether the app is
    hosted at username.github.io/  OR  username.github.io/spraywall/.
