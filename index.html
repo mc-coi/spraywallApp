@@ -123,11 +123,34 @@
     padding:.55rem .7rem;min-width:140px}
   @media(max-width:560px){header h1{font-size:.9rem}}
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+/* ============================================================
+   FIREBASE CONFIG  —  FILL THIS IN  (see README-firebase.md)
+   Until you paste your real config, the app runs in LOCAL mode
+   with the demo data, exactly as before. Nothing breaks.
+   ============================================================ */
+window.FIREBASE_CONFIG = {
+  apiKey:        "PASTE_API_KEY",
+  authDomain:    "PASTE_PROJECT.firebaseapp.com",
+  databaseURL:   "https://PASTE_PROJECT-default-rtdb.firebaseio.com",
+  projectId:     "PASTE_PROJECT",
+  storageBucket: "PASTE_PROJECT.appspot.com",
+  appId:         "PASTE_APP_ID"
+};
+/* Setter passphrase: anyone can READ climbs with no login.
+   Writing (Set mode + saving) is hidden until this is entered.
+   Change it to whatever you want; it is a soft gate, not crypto. */
+window.SETTER_PASSPHRASE = "stemwall";
+</script>
 </head>
 <body>
 <header>
   <h1>STEM Spray Wall</h1>
   <span class="spacer"></span>
+  <span id="cloudPill" title="Sync status" style="font-family:'SF Mono',ui-monospace,monospace;font-size:.62rem;color:var(--muted);border:1px solid var(--panel-edge);border-radius:999px;padding:.18rem .55rem;margin-right:.5rem">local</span>
+  <button id="setterUnlock" style="font-family:inherit;font-size:.72rem;background:var(--panel);color:var(--muted);border:1px solid var(--panel-edge);border-radius:8px;padding:.3rem .6rem;margin-right:.5rem;cursor:pointer">🔒 Setter</button>
   <div class="modeToggle" id="modeToggle">
     <button data-m="climb" class="on">Climb</button>
     <button data-m="set">Set</button>
@@ -247,7 +270,101 @@
     ];
   }
 
-  /* ---------------- view transform ---------------- */
+  /* ================= Firebase sync layer ================= */
+  const FB={ on:false, db:null, isSetter:false };
+  const cloudPill=document.getElementById('cloudPill');
+  function setPill(txt,color){cloudPill.textContent=txt;cloudPill.style.color=color||'var(--muted)';}
+
+  function fbConfigured(){
+    const c=window.FIREBASE_CONFIG||{};
+    return c.apiKey && !c.apiKey.startsWith('PASTE_') && c.databaseURL && !c.databaseURL.includes('PASTE_');
+  }
+
+  function initFirebase(){
+    if(!fbConfigured()){ setPill('local','#9c8f78'); return false; }
+    try{
+      firebase.initializeApp(window.FIREBASE_CONFIG);
+      FB.db=firebase.database();
+      FB.on=true;
+      setPill('cloud ◌','#e8a13a');
+      // Holds: read once (fixed wall map). Climbs: live subscription.
+      FB.db.ref('wall/holds').get().then(snap=>{
+        const v=snap.val();
+        if(v && Array.isArray(v) && v.length){
+          holds=v.map(h=>({id:h.id,x:h.x,y:h.y}));
+          fit&&fit(); render&&render();
+        }
+      }).catch(()=>{});
+      FB.db.ref('wall/climbs').on('value',snap=>{
+        const v=snap.val();
+        if(v){
+          climbs=Object.values(v);
+          setPill('cloud ●','#3fd07a');
+        }else{
+          climbs=[]; setPill('cloud ●','#3fd07a');
+        }
+        selectedClimb=null;
+        if(typeof refreshList==='function')refreshList();
+        if(typeof render==='function')render();
+      },()=>setPill('cloud ✕','#d8633f'));
+      return true;
+    }catch(err){
+      console.warn('Firebase init failed',err);
+      setPill('local','#9c8f78');
+      return false;
+    }
+  }
+
+  // Push one climb to the cloud (setter only). Falls back to local array.
+  function cloudSaveClimb(climb){
+    if(FB.on && FB.isSetter){
+      FB.db.ref('wall/climbs/'+climb.id).set(climb)
+        .then(()=>showToast('Saved “'+climb.name+'” to cloud'))
+        .catch(()=>{ climbs.push(climb); refreshList(); showToast('Cloud write failed — kept local'); });
+    }else{
+      climbs.push(climb); refreshList();
+      showToast(FB.on?'Saved “'+climb.name+'” (local — unlock Setter to sync)'
+                      :'Saved “'+climb.name+'” (local)');
+    }
+  }
+
+  // One-time holds upload — used from Set mode Import when cloud + setter.
+  function cloudSeedHolds(arr){
+    if(!(FB.on&&FB.isSetter)){return false;}
+    FB.db.ref('wall/holds').set(arr.map(h=>({id:h.id,x:+h.x.toFixed(5),y:+h.y.toFixed(5)})))
+      .then(()=>showToast('Uploaded '+arr.length+' holds to cloud (one-time)'))
+      .catch(()=>showToast('Holds upload failed'));
+    return true;
+  }
+
+  /* setter passphrase gate — read is always open, write is gated */
+  function refreshSetterUI(){
+    const btn=document.getElementById('setterUnlock');
+    const setTab=document.querySelector('#modeToggle button[data-m="set"]');
+    if(FB.isSetter || !FB.on){            // local mode: no gate, full access
+      btn.textContent='🔓 Setter';
+      btn.style.color='#3fd07a';
+      if(setTab)setTab.style.display='';
+    }else{
+      btn.textContent='🔒 Setter';
+      btn.style.color='var(--muted)';
+      if(setTab)setTab.style.display='none';   // hide Set tab until unlocked
+      if(mode==='set'){ document.querySelector('#modeToggle button[data-m="climb"]').click(); }
+    }
+  }
+  document.getElementById('setterUnlock').addEventListener('click',()=>{
+    if(FB.isSetter){
+      FB.isSetter=false; refreshSetterUI(); showToast('Setter locked'); return;
+    }
+    const pass=prompt('Setter passphrase:');
+    if(pass===null)return;
+    if(pass===window.SETTER_PASSPHRASE){
+      FB.isSetter=true; refreshSetterUI(); showToast('Setter unlocked — you can now set climbs');
+    }else{
+      showToast('Wrong passphrase');
+    }
+  });
+
   function applyView(){cw.style.transform=`translate(${view.tx}px,${view.ty}px) scale(${view.scale})`;}
   function fit(){
     const sr=stage.getBoundingClientRect();
@@ -366,15 +483,15 @@
     const hasStart=Object.values(draft).includes('start');
     const hasFinish=Object.values(draft).includes('finish');
     if(!hasStart||!hasFinish){showToast('Need a start and a finish');return;}
-    climbs.push({
+    const newClimb={
       id:'c'+Date.now(),
       name, grade:document.getElementById('setGrade').value,
       setter:document.getElementById('setter').value.trim()||'—',
       date:new Date().toISOString().slice(0,10),
       holds:ids.map(i=>({id:isNaN(+i)?i:+i,role:draft[i]}))
-    });
-    showToast('Saved “'+name+'”');
-    resetDraft();refreshList();
+    };
+    cloudSaveClimb(newClimb);
+    resetDraft();
   });
   function resetDraft(){
     draft={};document.getElementById('climbName').value='';
@@ -462,6 +579,12 @@
         if(d.climbs&&d.climbs.length){climbs=d.climbs;}
         selectedClimb=null;refreshList();render();
         showToast(`Imported ${holds.length} holds, ${climbs.length} climbs`);
+        // If you're an unlocked setter on cloud, offer to publish the
+        // holds map once so every device gets it without importing.
+        if(FB.on && FB.isSetter && holds.length &&
+           confirm('Upload these '+holds.length+' holds to the cloud so everyone sees them? (one-time wall setup)')){
+          cloudSeedHolds(holds);
+        }
       }catch(err){alert('Could not parse JSON: '+err.message);}
     };
     r.readAsText(f);
@@ -536,6 +659,10 @@
   function boot(){
     natW=img.naturalWidth;natH=img.naturalHeight;
     seed();buildGradeOptions();fit();refreshList();render();
+    // Try cloud. If configured, its data replaces the demo seed live.
+    const cloud=initFirebase();
+    refreshSetterUI();
+    if(cloud){ setTimeout(()=>showToast('Connected — loading shared climbs'),300); }
     setTimeout(()=>{if(mode==='climb')hint.style.opacity='0';},5000);
   }
   if(img.complete&&img.naturalWidth)boot();
