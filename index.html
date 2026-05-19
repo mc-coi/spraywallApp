@@ -131,14 +131,19 @@
    Until you paste your real config, the app runs in LOCAL mode
    with the demo data, exactly as before. Nothing breaks.
    ============================================================ */
-window.FIREBASE_CONFIG = {
-  apiKey:        "PASTE_API_KEY",
-  authDomain:    "PASTE_PROJECT.firebaseapp.com",
-  databaseURL:   "https://PASTE_PROJECT-default-rtdb.firebaseio.com",
-  projectId:     "PASTE_PROJECT",
-  storageBucket: "PASTE_PROJECT.appspot.com",
-  appId:         "PASTE_APP_ID"
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyCkfadWHbUfZ-zXjvCy7VZzpuYYOvcIXSs",
+  authDomain: "spraywall-a658e.firebaseapp.com",
+  databaseURL: "https://spraywall-a658e-default-rtdb.firebaseio.com",
+  projectId: "spraywall-a658e",
+  storageBucket: "spraywall-a658e.firebasestorage.app",
+  messagingSenderId: "822609959932",
+  appId: "1:822609959932:web:dbabcf1c65a79784d0f079"
 };
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 /* Setter passphrase: anyone can READ climbs with no login.
    Writing (Set mode + saving) is hidden until this is entered.
    Change it to whatever you want; it is a soft gate, not crypto. */
